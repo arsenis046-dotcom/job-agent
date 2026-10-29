@@ -151,7 +151,7 @@ def run_score(config: Config) -> ScoreOutcome:
     conn = open_db(config.db_path)
     try:
         for row in unscored(conn, config.profile.name):
-            assessment = matcher.assess(_vacancy_from_row(row))
+            assessment = matcher.assess(vacancy_from_row(row))
             _save(conn, row["id"], config.profile.name, assessment)
             outcome.scored += 1
             outcome.by_verdict[assessment.verdict] = (
@@ -162,7 +162,7 @@ def run_score(config: Config) -> ScoreOutcome:
     return outcome
 
 
-def _vacancy_from_row(row) -> Vacancy:
+def vacancy_from_row(row) -> Vacancy:
     return Vacancy(
         platform=row["platform"],
         external_id=row["external_id"],
@@ -304,7 +304,7 @@ def run_apply(config: Config, limit: int | None = None) -> ApplyOutcome:
                 outcome.skipped += 1
                 continue
 
-            vacancy = _vacancy_from_row(row)
+            vacancy = vacancy_from_row(row)
             letter = writer.write(vacancy)
             letter_verdict = checker.check_letter(
                 letter.text, " ".join(p for p in (row["title"], row["description"]) if p)

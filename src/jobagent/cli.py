@@ -29,8 +29,16 @@ from .documents import (
     render_docx,
     render_pdf,
 )
-from .pipeline import run_apply, run_prune, run_score, run_search
+from .agents.interview import prepare
+from .pipeline import (
+    run_apply,
+    run_prune,
+    run_score,
+    run_search,
+    vacancy_from_row,
+)
 from .profile import find_gaps, load_master_profile
+from .reports.market import write_digest, write_dossier, write_market_report
 from .reports.vacancies import write_report
 
 console = Console()
@@ -353,14 +361,50 @@ def mode(
 
 @app.command()
 def report() -> None:
-    """Рыночный отчёт и недельный дайджест."""
-    _phase(4, "Market Analyst")
+    """Рыночный отчёт: зарплаты, частые требования, динамика, что подтянуть."""
+    config = _config()
+    try:
+        path = write_market_report(config)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(f"Отчёт: [green]{path}[/green]")
+
+
+@app.command()
+def digest() -> None:
+    """Недельный дайджест: что произошло и что требует решения."""
+    config = _config()
+    console.print(f"Дайджест: [green]{write_digest(config)}[/green]")
 
 
 @app.command()
 def interview(vacancy_id: int) -> None:
-    """Подготовка к собеседованию по приглашению."""
-    _phase(4, "Interview Coach")
+    """Собрать досье к собеседованию по вакансии из базы."""
+    config = _config()
+    try:
+        master = load_master_profile(config.root)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    conn = open_db(config.db_path)
+    try:
+        row = conn.execute(
+            "SELECT v.*, (SELECT score FROM scores WHERE vacancy_id = v.id "
+            " AND profile = ? ORDER BY created_at DESC LIMIT 1) AS score "
+            "FROM vacancies v WHERE v.id = ?",
+            (config.profile.name, vacancy_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        console.print(f"[red]Вакансии {vacancy_id} нет в базе.[/red]")
+        raise typer.Exit(1)
+
+    dossier = prepare(vacancy_from_row(row), master, score=row["score"])
+    path = write_dossier(config, dossier, vacancy_id)
+    console.print(f"Досье: [green]{path}[/green]")
 
 
 if __name__ == "__main__":
