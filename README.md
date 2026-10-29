@@ -39,7 +39,12 @@ uv run jobagent mode            # показать режим; mode approve / mo
 uv run pytest
 ```
 
-Поля мастер-профиля описаны в `docs/profile.md`.
+Поля мастер-профиля описаны в `docs/profile.md`, профили поиска —
+в `docs/search-profiles.md`. Сменить сферу поиска:
+
+```bash
+jobagent profile new povar -k "повар" --title "Повар" --switch
+```
 
 ## Состояние по фазам
 
@@ -50,7 +55,7 @@ uv run pytest
 | 2 | Коннекторы, Scout, Matcher | поиск, оценка и отчёт готовы; оценка пока локальная, без модели |
 | 3 | Letter Writer, Fact Checker, Applier | готово; письмо пока собирается из фактов, без модели |
 | 4 | Market Analyst, Portfolio Advisor, Interview Coach | — |
-| 5 | Смена сферы поиска | профили работают, диалоговое создание — нет |
+| 5 | Смена сферы поиска | готово, проверено на профиле вне IT |
 
 ## Режимы отправки
 

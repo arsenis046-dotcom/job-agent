@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -209,6 +211,78 @@ def set_active_profile(name: str, root: Path | None = None) -> None:
     else:
         raise ConfigError("в settings.yaml не нашлась строка active_profile")
     path.write_text("".join(lines), encoding="utf-8", newline="\n")
+
+
+PROFILE_TEMPLATE = """# Профиль поиска «{name}». Вся специфика сферы живёт здесь,
+# а не в коде: чтобы искать в другой сфере, достаточно другого такого файла.
+# Описание полей — docs/search-profiles.md
+
+name: {name}
+title: {title}
+
+keywords:
+{keywords}
+
+# отсеивается по названию до обращения к модели
+exclude_keywords: []
+
+regions: []          # например: ["Москва", "удалённо"]
+schedule: []         # remote / hybrid / office
+employment: []       # полная / частичная / проектная
+salary_min: null
+level: null
+
+must_have_skills: []     # без этого вакансия не подходит
+nice_to_have_skills: []  # приятный плюс
+
+# стоп-факторы: вакансия отбрасывается независимо от оценки
+deal_breakers: []
+
+score_threshold: {threshold}
+"""
+
+
+def create_profile(
+    name: str,
+    keywords: list[str],
+    *,
+    title: str | None = None,
+    threshold: int = 70,
+    root: Path | None = None,
+) -> Path:
+    """Создаёт файл профиля поиска под новую сферу. Код при этом не меняется."""
+    root = root or project_root()
+    if not name or not re.fullmatch(r"[a-z0-9_]+", name):
+        raise ConfigError(
+            f"имя профиля {name!r} не годится: только строчные латинские буквы, "
+            "цифры и подчёркивание — это имя файла"
+        )
+    keywords = [k.strip() for k in keywords if k.strip()]
+    if not keywords:
+        raise ConfigError("нужно хотя бы одно ключевое слово для поиска")
+
+    path = root / "config" / "search_profiles" / f"{name}.yaml"
+    if path.exists():
+        raise ConfigError(f"профиль уже есть: {path}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        PROFILE_TEMPLATE.format(
+            name=name,
+            # json.dumps даёт корректную YAML-строку в кавычках; safe_dump
+            # для отдельного скаляра добавляет маркер конца документа «...»
+            title=json.dumps(title or name, ensure_ascii=False),
+            keywords="\n".join(
+                f"  - {json.dumps(k, ensure_ascii=False)}" for k in keywords
+            ),
+            threshold=threshold,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
+    # сразу проверяем, что получившийся файл проходит валидацию
+    load_profile(name, root)
+    return path
 
 
 def set_mode(mode: Mode, root: Path | None = None) -> None:

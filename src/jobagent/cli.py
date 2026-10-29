@@ -14,11 +14,14 @@ from .config import (
     ConfigError,
     Mode,
     available_profiles,
+    create_profile,
     env,
     load_config,
+    load_profile,
     set_active_profile,
     set_mode,
 )
+from .agents.sphere import relevance
 from .connectors import REGISTRY
 from .db import SCHEMA_VERSION, open_db, sent_today
 from .documents import (
@@ -164,9 +167,51 @@ def profile_switch(name: str) -> None:
 
 
 @profile_app.command("new")
-def profile_new(name: str) -> None:
-    """Собрать профиль под новую сферу в диалоге."""
-    _phase(5, f"диалоговое создание профиля {name!r}")
+def profile_new(
+    name: str = typer.Argument(..., help="Имя файла: строчные латинские буквы"),
+    keyword: list[str] = typer.Option(
+        None, "--keyword", "-k", help="Ключевое слово для поиска, можно несколько"
+    ),
+    title: str = typer.Option(None, help="Название сферы по-русски"),
+    threshold: int = typer.Option(70, help="Порог оценки для этой сферы"),
+    switch: bool = typer.Option(False, "--switch", help="Сразу сделать активным"),
+) -> None:
+    """Создать профиль поиска под новую сферу. Правок в коде не требует."""
+    config = _config()
+    keywords = list(keyword or [])
+    if not keywords:
+        console.print("Ключевые слова, по которым искать. Пустая строка — закончить.")
+        while True:
+            answer = typer.prompt(f"  слово {len(keywords) + 1}", default="", show_default=False)
+            if not answer.strip():
+                break
+            keywords.append(answer.strip())
+
+    try:
+        path = create_profile(
+            name, keywords, title=title, threshold=threshold, root=config.root
+        )
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(f"Профиль: [green]{path}[/green]")
+
+    # сразу говорим, с чем мы в эту сферу идём
+    try:
+        master = load_master_profile(config.root)
+    except ConfigError:
+        console.print(
+            "[yellow]Мастер-профиль не заполнен — что переносится в новую сферу, "
+            "сказать пока нечем.[/yellow]"
+        )
+    else:
+        console.print(str(relevance(load_profile(name, config.root), master)))
+
+    if switch:
+        set_active_profile(name, config.root)
+        console.print(f"Активный профиль: [green]{name}[/green]")
+    else:
+        console.print(f"Сделать активным: [green]jobagent profile switch {name}[/green]")
 
 
 @profile_app.command("check")
