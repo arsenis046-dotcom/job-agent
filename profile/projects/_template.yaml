@@ -1,0 +1,23 @@
+# Шаблон описания пет-проекта. Один файл на проект, имя файла — короткий slug.
+# Пустое поле = факт неизвестен. Portfolio Advisor читает эти файлы.
+
+slug: example
+name: null
+one_liner: null             # одна фраза: что это и для кого
+
+problem: null               # какую задачу решал
+my_role: null               # что именно сделал я, честно
+stack: []                   # Python, aiogram, SQLite …
+result: null                # измеримый результат, если он есть
+in_production: null         # true / false — работает ли у реальных людей
+users: null                 # сколько людей пользуется, если известно
+
+repo_url: null
+demo_url: null
+docs_url: null
+
+started: null               # ГГГГ-ММ
+status: null                # работает / заброшен / в разработке
+
+# Чему научился — пригодится Letter Writer, но только как факт, не как лозунг
+learned: []

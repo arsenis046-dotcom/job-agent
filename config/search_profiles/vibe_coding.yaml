@@ -1,0 +1,37 @@
+name: vibe_coding
+title: "Разработка с ИИ-инструментами (vibe coding)"
+
+keywords:
+  - "vibe coding"
+  - "AI-разработчик"
+  - "разработчик с ИИ"
+  - "промпт-инженер"
+  - "prompt engineer"
+  - "LLM"
+  - "AI-автоматизация"
+  - "no-code"
+
+# отсеиваем по заголовку до оценки, чтобы не жечь токены
+exclude_keywords:
+  - "senior"
+  - "lead"
+  - "тимлид"
+  - "5+ лет"
+  - "от 5 лет"
+
+# TODO уточнить на Фазе 2: регионы (id площадок подставит коннектор)
+regions: []          # например: ["Москва", "удалённо"]
+schedule: []         # remote / hybrid / office
+employment: []       # полная / частичная / проектная
+salary_min: null     # TODO
+level: null          # junior / middle — TODO
+
+must_have_skills: []
+nice_to_have_skills: []
+
+# стоп-факторы: вакансия отбрасывается независимо от оценки
+deal_breakers:
+  - "релокация обязательна"
+  - "неоплачиваемая стажировка"
+
+score_threshold: 70

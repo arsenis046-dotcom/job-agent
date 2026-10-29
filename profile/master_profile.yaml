@@ -1,0 +1,53 @@
+# ЕДИНСТВЕННЫЙ источник фактов обо мне. Агентам запрещено добавлять сюда
+# что-либо от себя и использовать в резюме то, чего здесь нет.
+# Заполняется через `jobagent profile build` (Фаза 1) или руками.
+# Поля со значением null и пустые списки означают «факт неизвестен» — агент
+# обязан задать вопрос, а не домыслить.
+
+schema_version: 1
+
+person:
+  full_name: null
+  city: null
+  relocation: null          # true / false / "по договорённости"
+  remote_only: null
+  email: null
+  phone: null
+  telegram: null
+  github: null
+  website: null
+
+position:
+  target_titles: []         # как я хочу называться в резюме
+  level: null               # junior / middle — честно
+  salary_expectation: null
+  employment: []            # полная / частичная / проектная
+  schedule: []              # remote / hybrid / office
+
+summary: null               # 2–3 фразы о себе, только факты
+
+# Коммерческого найма нет. Этот список оставлен пустым намеренно:
+# если когда-нибудь появится — заполнять здесь, а не выдумывать в резюме.
+employment_history: []
+
+# Пет-проекты — главный актив. Подробные описания в profile/projects/*.yaml
+projects: []
+
+skills:
+  languages: []             # языки программирования
+  tools: []                 # Claude Code, Cursor, git, Docker …
+  platforms: []             # Linux, Windows Server, Hyper-V …
+  databases: []
+  other: []
+
+languages: []               # русский, английский — с уровнем
+
+education: []               # учебное заведение, специальность, годы
+
+certificates: []
+
+# То, о чём агент не должен догадываться: ограничения и предпочтения
+constraints:
+  companies_to_avoid: []
+  industries_to_avoid: []
+  notes: null

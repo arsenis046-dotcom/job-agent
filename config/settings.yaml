@@ -1,0 +1,47 @@
+# Общие настройки. Специфика сферы поиска живёт в config/search_profiles/.
+
+# dry_run — ничего не отправляется, только черновики в output/
+# approve  — каждый отклик показывается и ждёт моего подтверждения
+# auto     — отправляет сам всё, что выше порога, в пределах дневного лимита
+mode: dry_run
+
+active_profile: vibe_coding
+
+limits:
+  applications_per_day: 10
+  score_threshold: 70
+  request_delay_seconds: 1.5
+  max_requests_per_minute: 30
+
+llm:
+  model: claude-sonnet-5-5
+  # для рыночного анализа и сложной оценки
+  model_heavy: claude-opus-5-5
+  max_tokens: 4096
+
+# Режимы доступа — обоснование в docs/api_notes.md
+platforms:
+  hh:
+    enabled: true
+    # api — приложение на dev.hh.ru одобрено; rss — публичный RSS поиска;
+    # manual — вакансии я приношу сам
+    access: rss
+    # api — POST /negotiations; draft — черновик письма + ссылка
+    apply: draft
+  superjob:
+    enabled: true
+    access: api
+    apply: api
+  rabota:
+    enabled: false
+    access: manual
+    apply: draft
+
+paths:
+  db: output/jobagent.sqlite3
+  output_dir: output
+
+schedule:
+  # для Task Scheduler / cron, сам агент расписание не держит
+  search: "0 9,18 * * *"
+  market_report: "0 10 * * 1"
