@@ -8,7 +8,7 @@
 | Площадка | Поиск вакансий | Текст вакансии | Отклик от соискателя | Режим в `settings.yaml` |
 |---|---|---|---|---|
 | hh.ru | только с токеном приложения (403 без него) либо официальный RSS | только по токену | `POST /negotiations` есть, но нужен тот же токен | `access: rss`, `apply: draft` |
-| SuperJob | `GET /2.0/vacancies/` с ключом приложения | да, в выдаче и по `/vacancies/:id/` | **есть**: `POST /2.0/send_cv_on_vacancy/` | `access: api`, `apply: api` |
+| SuperJob | `GET /2.0/vacancies/` с ключом приложения (ключ — по заявке) | да, в выдаче и по `/vacancies/:id/` | **есть**: `POST /2.0/send_cv_on_vacancy/` | `access: api`, `apply: api` |
 | Работа.ру | партнёрский API, самостоятельной регистрации нет | — | — | выключена |
 
 ## hh.ru
@@ -76,8 +76,14 @@ $ curl -s "https://hh.ru/search/vacancy/rss?text=python" | head -5
 
 ## SuperJob
 
-Регистрация приложения **самостоятельная**, без модерации под работодателя:
-https://api.superjob.ru/register/. Без ключа:
+Ключ выдаётся по **заявке** на https://api.superjob.ru/register — форма за
+входом в аккаунт. Правила (https://www.superjob.ru/info/api_service.html)
+увязывают выдачу ключа с уплатой лицензионного вознаграждения, размер
+которого там не назван; разбор и текст заявки — `docs/superjob-application.md`.
+Ранее я написал здесь, что регистрация самостоятельная и без модерации —
+это было сказано по виду сообщения об ошибке, а не по правилам, и неверно.
+
+Без ключа:
 
 ```
 $ curl -s "https://api.superjob.ru/2.0/vacancies/?keyword=python&count=1"
