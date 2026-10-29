@@ -47,6 +47,38 @@ def test_проект_без_роли_в_резюме_не_идёт(sample_profi
     assert any(g.path.startswith("projects[") for g in find_gaps(profile))
 
 
+def test_порядок_проектов_задаётся_resume_order(sample_profile):
+    first = sample_profile.projects[0]
+    second = first.model_copy(update={"slug": "второй", "resume_order": 1})
+    third = first.model_copy(update={"slug": "третий", "resume_order": 2})
+    profile = sample_profile.model_copy(update={"projects": [third, second]})
+    assert [p.slug for p in profile.resume_projects] == ["второй", "третий"]
+
+
+def test_без_порядка_сначала_работающие_потом_новые(sample_profile):
+    base = sample_profile.projects[0]
+    живой = base.model_copy(
+        update={"slug": "живой", "in_production": True, "started": "2026-01"}
+    )
+    черновик = base.model_copy(
+        update={"slug": "черновик", "in_production": False, "started": "2026-09"}
+    )
+    свежий = base.model_copy(
+        update={"slug": "свежий", "in_production": True, "started": "2026-10"}
+    )
+    profile = sample_profile.model_copy(
+        update={"projects": [черновик, живой, свежий]}
+    )
+    assert [p.slug for p in profile.resume_projects] == ["свежий", "живой", "черновик"]
+
+
+def test_скрытый_проект_в_резюме_не_идёт_но_в_профиле_остаётся(sample_profile):
+    hidden = sample_profile.projects[0].model_copy(update={"include_in_resume": False})
+    profile = sample_profile.model_copy(update={"projects": [hidden]})
+    assert profile.projects, "из профиля проект не исчезает"
+    assert profile.resume_projects == [], "а в базовое резюме не попадает"
+
+
 def test_проект_без_ссылки_это_замечание_а_не_запрет(sample_profile):
     project = sample_profile.projects[0].model_copy(
         update={"repo_url": None, "demo_url": None, "docs_url": None}

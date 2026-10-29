@@ -65,8 +65,15 @@ class Project(BaseModel):
     status: str | None = None
     learned: list[str] = []
 
+    # Что показывать в базовом резюме и в каком порядке. Под конкретную вакансию
+    # отбор делает Resume Writer (Фаза 3) — он может взять и то, что здесь скрыто.
+    include_in_resume: bool = True
+    resume_order: int | None = None
+
     @property
     def link(self) -> str | None:
+        """Ссылка для резюме. Приватный репозиторий ссылкой не считается:
+        в `repo_url` его просто не пишем, иначе рекрутер увидит 404."""
         return self.repo_url or self.demo_url or self.docs_url
 
     @property
@@ -148,7 +155,33 @@ class MasterProfile(BaseModel):
 
     @property
     def resume_projects(self) -> list[Project]:
-        return [p for p in self.projects if p.ready_for_resume]
+        """Проекты для базового резюме, в порядке убывания значимости.
+
+        Порядок задаётся `resume_order`; у кого он не задан — сначала то, что
+        работает у живых людей, затем более новое. Алфавитный порядок файлов
+        для резюме не годится: первым должен идти сильнейший проект.
+        """
+        chosen = [p for p in self.projects if p.ready_for_resume and p.include_in_resume]
+        return sorted(
+            chosen,
+            key=lambda p: (
+                p.resume_order if p.resume_order is not None else 1000,
+                not bool(p.in_production),
+                _started_key(p.started),
+                p.slug,
+            ),
+        )
+
+
+def _started_key(started: str | None) -> int:
+    """Для сортировки: более новое выше, неизвестная дата — в конец.
+
+    Отрицательное число, потому что сортировка по возрастанию.
+    """
+    digits = "".join(c for c in str(started or "") if c.isdigit())
+    if len(digits) < 6:
+        return 0
+    return -int(digits[:6])  # ГГГГММ
 
 
 @dataclass(frozen=True)
