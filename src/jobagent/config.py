@@ -65,6 +65,8 @@ class PlatformSettings(BaseModel):
     # п. 4.6 Условий запрещает передавать полученные данные сторонним
     # сервисам, а модель — сторонний сервис (docs/hh-application.md)
     use_model: bool = False
+    # Только для telegram: публичные каналы, которые читаем
+    channels: list[str] = []
 
 
 class Paths(BaseModel):

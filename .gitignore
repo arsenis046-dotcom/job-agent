@@ -12,3 +12,7 @@ __pycache__/
 profile/master_profile.yaml
 profile/projects/*.yaml
 !profile/projects/_template.yaml
+
+# Файл сессии Telegram — это доступ к аккаунту
+*.session
+*.session-journal

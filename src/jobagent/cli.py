@@ -22,7 +22,7 @@ from .config import (
     set_mode,
 )
 from .agents.sphere import relevance
-from .connectors import REGISTRY
+from .connectors import REGISTRY, ConnectorError, build_connector
 from .db import SCHEMA_VERSION, open_db, sent_today
 from .documents import (
     RenderError,
@@ -53,6 +53,10 @@ app = typer.Typer(
 )
 profile_app = typer.Typer(help="Профили поиска и мастер-профиль.", no_args_is_help=True)
 app.add_typer(profile_app, name="profile")
+telegram_app = typer.Typer(
+    help="Чтение публичных каналов с вакансиями.", no_args_is_help=True
+)
+app.add_typer(telegram_app, name="telegram")
 
 
 def _config() -> Config:
@@ -314,6 +318,58 @@ def resume(
     console.print(str(report) if report.ok else f"[red]{report}[/red]")
     if not report.ok:
         raise typer.Exit(1)
+
+
+@telegram_app.command("login")
+def telegram_login() -> None:
+    """Войти в Telegram под своим аккаунтом. Один раз.
+
+    Телефон и код спрашивает сам Telethon, и вводишь их ты: ни телефон,
+    ни код, ни облачный пароль агент не видит и не хранит. Остаётся только
+    файл сессии — он в .gitignore и равен доступу к аккаунту, так что
+    отдавать его никому нельзя.
+    """
+    config = _config()
+    connector = build_connector("telegram", config)
+    try:
+        client = connector.client()
+    except ConnectorError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    console.print(f"Файл сессии: [green]{connector.session_path}[/green]")
+    with client:
+        me = client.get_me()
+        console.print(f"Вход выполнен: [green]{me.first_name} (@{me.username})[/green]")
+    connector.close()
+
+
+@telegram_app.command("channels")
+def telegram_channels() -> None:
+    """Проверить, какие каналы настроены и читаются ли они."""
+    config = _config()
+    connector = build_connector("telegram", config)
+    if not connector.channels:
+        console.print("[yellow]Каналы не заданы[/yellow]: "
+                      "platforms.telegram.channels в config/settings.yaml")
+        raise typer.Exit(1)
+
+    from datetime import datetime, timedelta, timezone
+
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    for channel in connector.channels:
+        try:
+            посты = connector._posts(channel, since)
+        except Exception as exc:
+            console.print(f"  @{channel}: [red]не прочитался[/red] ({type(exc).__name__})")
+            continue
+        вакансий = sum(
+            1 for post in посты if connector._to_vacancy(channel, post) is not None
+        )
+        console.print(
+            f"  @{channel}: постов за неделю {len(посты)}, из них вакансий {вакансий}"
+        )
+    connector.close()
 
 
 @app.command()

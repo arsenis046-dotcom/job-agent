@@ -41,6 +41,24 @@ platforms:
     apply: api
     # в правилах SuperJob такого запрета нет (docs/superjob-application.md)
     use_model: true
+  # Публичные телеграм-каналы с вакансиями. Читаем официальным интерфейсом
+  # Telegram под своим аккаунтом (docs/telegram.md). Откликов в каналах нет:
+  # отвечают письмом или в личку, поэтому apply всегда draft.
+  telegram:
+    # Включить после `jobagent telegram login`: без входа читать нечем,
+    # и площадка молча ничего не даст
+    enabled: false
+    access: api
+    apply: draft
+    use_model: true
+    channels:
+      # Проверить и поправить под себя: канал мог переехать или заглохнуть
+      - devjobs
+      - forallprogrammers
+      - it_bl
+      - jobforjunior
+      - rabota_it_rus
+
   rabota:
     enabled: false
     access: manual

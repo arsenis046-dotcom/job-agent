@@ -6,10 +6,12 @@ from ..config import Config
 from .base import ApplyResult, Connector, ConnectorError, RateLimiter, Vacancy
 from .hh import HHConnector
 from .superjob import SuperJobConnector
+from .telegram import TelegramConnector
 
 REGISTRY: dict[str, type[Connector]] = {
     HHConnector.name: HHConnector,
     SuperJobConnector.name: SuperJobConnector,
+    TelegramConnector.name: TelegramConnector,
 }
 
 __all__ = [
