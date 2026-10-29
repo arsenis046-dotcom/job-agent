@@ -28,7 +28,17 @@ class SuperJobConnector(Connector):
 
     @property
     def app_headers(self) -> dict[str, str]:
-        return {"X-Api-App-Id": require_env("SUPERJOB_SECRET", self.config.root)}
+        secret = require_env("SUPERJOB_SECRET", self.config.root)
+        if not secret.isascii():
+            # значение уходит в заголовок, а там только ASCII: иначе httpx
+            # падает в UnicodeEncodeError, по которому ничего не понять.
+            # Сам ключ в сообщение не попадает.
+            raise ConnectorError(
+                "SUPERJOB_SECRET содержит нелатинские символы — в заголовок "
+                "такое не уходит. Проверьте, не попал ли лишний символ при "
+                "копировании ключа"
+            )
+        return {"X-Api-App-Id": secret}
 
     def user_token(self) -> str:
         """Токен соискателя. Пароль уходит только в этот запрос и не логируется."""
@@ -49,6 +59,12 @@ class SuperJobConnector(Connector):
         token = response.json().get("access_token")
         if not token:
             raise ConnectorError("superjob: в ответе нет access_token")
+        if not str(token).isascii():
+            # токен тоже уходит в заголовок; сам токен в сообщение не попадает
+            raise ConnectorError(
+                "superjob: в access_token нелатинские символы — в заголовок "
+                "такое не уходит"
+            )
         self._token = token
         return token
 
