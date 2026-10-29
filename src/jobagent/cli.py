@@ -27,7 +27,9 @@ from .documents import (
     render_docx,
     render_pdf,
 )
+from .pipeline import run_prune, run_score, run_search
 from .profile import find_gaps, load_master_profile
+from .reports.vacancies import write_report
 
 console = Console()
 
@@ -261,14 +263,42 @@ def resume(
 
 @app.command()
 def search() -> None:
-    """Найти вакансии по активному профилю."""
-    _phase(2, "Scout")
+    """Найти вакансии по активному профилю и записать в базу."""
+    config = _config()
+    outcome = run_search(config)
+    console.print(str(outcome))
+    if outcome.errors:
+        raise typer.Exit(1)
 
 
 @app.command()
 def score() -> None:
-    """Оценить найденные вакансии."""
-    _phase(2, "Matcher")
+    """Оценить вакансии, которые ещё не оценивались под активный профиль."""
+    config = _config()
+    try:
+        outcome = run_score(config)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+    console.print(str(outcome))
+
+
+@app.command()
+def vacancies() -> None:
+    """Собрать отчёт по оценённым вакансиям в output/."""
+    config = _config()
+    md_path, csv_path = write_report(config)
+    console.print(f"Отчёт: [green]{md_path}[/green]")
+    console.print(f"Таблица: [green]{csv_path}[/green]")
+
+
+@app.command()
+def prune(
+    days: int = typer.Option(14, help="Сколько суток вакансии не быть в выдаче"),
+) -> None:
+    """Удалить вакансии, которых давно нет в выдаче (п. 3.11 Условий hh.ru)."""
+    config = _config()
+    console.print(str(run_prune(config, days)))
 
 
 @app.command()

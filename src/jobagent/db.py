@@ -14,7 +14,7 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS vacancies (
     description  TEXT,
     published_at TEXT,
     found_at     TEXT NOT NULL,
+    last_seen    TEXT,
     raw_json     TEXT,
     UNIQUE (platform, external_id)
 );
@@ -118,8 +119,17 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Догоняющие правки для баз, созданных прежними версиями схемы."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(vacancies)")}
+    if "last_seen" not in columns:  # схема v1 -> v2
+        conn.execute("ALTER TABLE vacancies ADD COLUMN last_seen TEXT")
+        conn.execute("UPDATE vacancies SET last_seen = found_at WHERE last_seen IS NULL")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.execute(
         "INSERT INTO meta(key, value) VALUES ('schema_version', ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -156,6 +166,9 @@ def already_applied(conn: sqlite3.Connection, vacancy_id: int) -> bool:
 def upsert_vacancy(conn: sqlite3.Connection, **fields: object) -> int:
     """Записывает вакансию, обновляя уже известную. Возвращает её id в базе."""
     fields.setdefault("found_at", now())
+    # каждая встреча вакансии в выдаче обновляет отметку: по ней видно,
+    # что вакансия ещё жива (п. 3.11 Условий hh.ru требует убирать архивные)
+    fields["last_seen"] = now()
     columns = ", ".join(fields)
     placeholders = ", ".join("?" for _ in fields)
     updates = ", ".join(
@@ -176,3 +189,85 @@ def upsert_vacancy(conn: sqlite3.Connection, **fields: object) -> int:
     ).fetchone()
     conn.commit()
     return int(row["id"])
+
+
+def unscored(conn: sqlite3.Connection, profile: str) -> list[sqlite3.Row]:
+    """Вакансии, которые ещё не оценивались под этот профиль поиска."""
+    return conn.execute(
+        "SELECT v.* FROM vacancies v "
+        "WHERE NOT EXISTS (SELECT 1 FROM scores s "
+        "                  WHERE s.vacancy_id = v.id AND s.profile = ?) "
+        "ORDER BY v.found_at DESC",
+        (profile,),
+    ).fetchall()
+
+
+def save_score(
+    conn: sqlite3.Connection,
+    vacancy_id: int,
+    profile: str,
+    *,
+    score: int | None,
+    verdict: str,
+    matched: str | None = None,
+    gaps: str | None = None,
+    deal_breakers: str | None = None,
+    reasoning: str | None = None,
+    model: str | None = None,
+) -> int:
+    cursor = conn.execute(
+        "INSERT INTO scores (vacancy_id, profile, score, verdict, matched, gaps, "
+        "deal_breakers, reasoning, model, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            vacancy_id,
+            profile,
+            score,
+            verdict,
+            matched,
+            gaps,
+            deal_breakers,
+            reasoning,
+            model,
+            now(),
+        ),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def scored(conn: sqlite3.Connection, profile: str) -> list[sqlite3.Row]:
+    """Вакансии с последней оценкой — для отчёта. Переоценки не ломают порядок."""
+    return conn.execute(
+        "SELECT v.*, s.score, s.verdict, s.reasoning, s.matched, s.gaps, "
+        "       s.deal_breakers, s.model, s.created_at AS scored_at, "
+        "       (SELECT 1 FROM applications a "
+        "        WHERE a.vacancy_id = v.id AND a.status = 'sent') AS applied "
+        "FROM vacancies v "
+        "JOIN scores s ON s.id = ("
+        "    SELECT id FROM scores WHERE vacancy_id = v.id AND profile = ?"
+        "    ORDER BY created_at DESC, id DESC LIMIT 1) "
+        "ORDER BY s.score IS NULL, s.score DESC, v.found_at DESC",
+        (profile,),
+    ).fetchall()
+
+
+def stale(conn: sqlite3.Connection, days: int) -> list[sqlite3.Row]:
+    """Вакансии, не попадавшиеся в выдаче дольше N суток: скорее всего, в архиве."""
+    return conn.execute(
+        "SELECT * FROM vacancies "
+        "WHERE COALESCE(last_seen, found_at) < datetime('now', ?) "
+        "ORDER BY COALESCE(last_seen, found_at)",
+        (f"-{int(days)} days",),
+    ).fetchall()
+
+
+def delete_vacancies(conn: sqlite3.Connection, ids: list[int]) -> int:
+    """Удаляет вакансии вместе с оценками (каскадом). Отклики тоже уйдут,
+    поэтому вызывающий обязан сначала исключить те, на которые откликались."""
+    if not ids:
+        return 0
+    marks = ", ".join("?" for _ in ids)
+    cursor = conn.execute(f"DELETE FROM vacancies WHERE id IN ({marks})", ids)
+    conn.commit()
+    return cursor.rowcount
