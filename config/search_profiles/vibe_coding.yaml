@@ -19,15 +19,26 @@ exclude_keywords:
   - "5+ лет"
   - "от 5 лет"
 
-# TODO уточнить на Фазе 2: регионы (id площадок подставит коннектор)
-regions: []          # например: ["Москва", "удалённо"]
-schedule: []         # remote / hybrid / office
-employment: []       # полная / частичная / проектная
-salary_min: null     # TODO
-level: null          # junior / middle — TODO
+regions: []          # заполнится, когда будет известен город
+schedule:            # ответ 29.10.2026
+  - удалённо
+  - гибрид
+employment:
+  - полная
+  - частичная
+  - проектная
+salary_min: null     # СПРОСИТЬ: без этого слагаемое в оценке не работает
+level: junior
 
-must_have_skills: []
-nice_to_have_skills: []
+# Без этих списков локальная оценка опирается только на ключевые слова
+# и ограничена потолком 75 — см. docs/search-profiles.md
+must_have_skills:
+  - Python
+nice_to_have_skills:
+  - Docker
+  - Linux
+  - PostgreSQL
+  - FastAPI
 
 # стоп-факторы: вакансия отбрасывается независимо от оценки
 deal_breakers:

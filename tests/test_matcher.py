@@ -18,8 +18,25 @@ def vacancy(title: str, description: str | None = None, **kwargs) -> Vacancy:
 
 @pytest.fixture
 def matcher(config, sample_profile):
-    """Профиль поиска как в репозитории: заполнен не полностью."""
+    """Профиль поиска как в репозитории."""
     return LocalMatcher(config, sample_profile)
+
+
+@pytest.fixture
+def пустой(config, sample_profile):
+    """Профиль поиска, в котором заданы только ключевые слова.
+
+    Это состояние сразу после `profile new`: различать вакансии нечем.
+    """
+    search = config.profile.model_copy(
+        update={
+            "must_have_skills": [],
+            "nice_to_have_skills": [],
+            "salary_min": None,
+            "schedule": [],
+        }
+    )
+    return LocalMatcher(config.model_copy(update={"profile": search}), sample_profile)
 
 
 @pytest.fixture
@@ -76,9 +93,9 @@ def test_подходящая_вакансия_получает_высокую_�
     assert "Python" in result.matched
 
 
-def test_при_незаполненном_профиле_поиска_оценка_не_доверяется(matcher):
+def test_при_незаполненном_профиле_поиска_оценка_не_доверяется(пустой):
     """Два совпавших слова не должны давать «откликаться» на пустом профиле."""
-    result = matcher.assess(
+    result = пустой.assess(
         vacancy("Разработчик с ИИ", "Python, Docker, git, LLM, автоматизация")
     )
     assert result.verdict == ASK, "без различающих признаков верить оценке нельзя"
