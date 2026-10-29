@@ -24,8 +24,11 @@ platforms:
   hh:
     enabled: true
     # api — приложение на dev.hh.ru одобрено; rss — публичный RSS поиска;
-    # manual — вакансии я приношу сам
-    access: rss
+    # manual — вакансии я приношу сам.
+    # По умолчанию manual: п. 6.1.38 Условий сайта запрещает автоматизированный
+    # сбор информации программами, и чтение RSS формально под него попадает.
+    # Разбор и запрос в hh — docs/hh-application.md
+    access: manual
     # api — POST /negotiations; draft — черновик письма + ссылка
     apply: draft
   superjob:

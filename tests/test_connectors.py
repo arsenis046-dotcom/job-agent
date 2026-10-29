@@ -21,12 +21,21 @@ RSS = """<?xml version='1.0' encoding='utf-8'?>
 """
 
 
+def _hh_access(config, access: Access):
+    """hh.ru по умолчанию в manual (docs/hh-application.md) — режим задаём явно."""
+    platforms = dict(config.settings.platforms)
+    platforms["hh"] = platforms["hh"].model_copy(update={"access": access})
+    return config.model_copy(
+        update={"settings": config.settings.model_copy(update={"platforms": platforms})}
+    )
+
+
 @respx.mock
 def test_hh_в_режиме_rss_находит_вакансии(config):
     respx.get("https://hh.ru/search/vacancy/rss").mock(
         return_value=httpx.Response(200, text=RSS)
     )
-    connector = build_connector("hh", config)
+    connector = build_connector("hh", _hh_access(config, Access.rss))
     assert connector.access is Access.rss
 
     vacancies = list(connector.search())
@@ -70,6 +79,14 @@ def test_superjob_разбирает_выдачу(config, monkeypatch):
     assert vacancy.salary_from == 120000
     assert vacancy.salary_to is None, "0 означает «не указано», а не ноль рублей"
     assert vacancy.has_text
+
+
+def test_hh_в_режиме_manual_ничего_не_ищет(config):
+    """Режим по умолчанию: ни одного запроса к hh.ru без одобренного приложения."""
+    with respx.mock:
+        route = respx.route().mock(side_effect=AssertionError("запрос к hh в manual"))
+        assert list(build_connector("hh", config).search()) == []
+        assert route.call_count == 0
 
 
 def test_включены_только_настроенные_площадки(config):
