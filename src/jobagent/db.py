@@ -191,14 +191,37 @@ def upsert_vacancy(conn: sqlite3.Connection, **fields: object) -> int:
     return int(row["id"])
 
 
-def unscored(conn: sqlite3.Connection, profile: str) -> list[sqlite3.Row]:
-    """Вакансии, которые ещё не оценивались под этот профиль поиска."""
+def unscored(
+    conn: sqlite3.Connection, profile: str, *, again: bool = False
+) -> list[sqlite3.Row]:
+    """Вакансии к оценке под этот профиль.
+
+    Обычно — только ещё не оценённые. С `again=True` берутся все: это нужно,
+    когда поменялся профиль поиска или движок оценки. Прежние оценки не
+    затираются, они остаются в истории, а в отчёт идёт последняя.
+    """
+    if again:
+        return conn.execute("SELECT * FROM vacancies ORDER BY found_at DESC").fetchall()
     return conn.execute(
         "SELECT v.* FROM vacancies v "
         "WHERE NOT EXISTS (SELECT 1 FROM scores s "
         "                  WHERE s.vacancy_id = v.id AND s.profile = ?) "
         "ORDER BY v.found_at DESC",
         (profile,),
+    ).fetchall()
+
+
+def score_history(conn: sqlite3.Connection, profile: str) -> list[sqlite3.Row]:
+    """Последняя оценка каждым движком по каждой вакансии — для сравнения."""
+    return conn.execute(
+        "SELECT v.id, v.title, v.company, s.model, s.score, s.verdict, s.reasoning "
+        "FROM vacancies v JOIN scores s ON s.vacancy_id = v.id "
+        "WHERE s.profile = ? AND s.id = ("
+        "    SELECT id FROM scores "
+        "    WHERE vacancy_id = v.id AND profile = ? AND model IS s.model "
+        "    ORDER BY created_at DESC, id DESC LIMIT 1) "
+        "ORDER BY v.id",
+        (profile, profile),
     ).fetchall()
 
 

@@ -103,6 +103,16 @@ def test_оценка_проходит_по_новым_вакансиям_оди
 
     assert run_score(prepared).scored == 0, "дважды одно и то же не оцениваем"
 
+    # но по требованию — переоцениваем: сменился профиль или движок
+    assert run_score(prepared, again=True).scored == 1
+
+    conn = open_db(prepared.db_path)
+    try:
+        оценок = conn.execute("SELECT COUNT(*) c FROM scores").fetchone()["c"]
+    finally:
+        conn.close()
+    assert оценок == 2, "прежняя оценка осталась в истории, а не затёрлась"
+
 
 @respx.mock
 def test_отчёт_собирается_и_содержит_вакансию(prepared):

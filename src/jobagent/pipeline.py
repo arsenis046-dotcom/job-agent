@@ -152,8 +152,12 @@ def _store(conn, vacancy: Vacancy) -> int:
     )
 
 
-def run_score(config: Config) -> ScoreOutcome:
-    """Matcher: оценить всё, что ещё не оценивалось под активный профиль."""
+def run_score(config: Config, again: bool = False) -> ScoreOutcome:
+    """Matcher: оценить всё, что ещё не оценивалось под активный профиль.
+
+    `again=True` переоценивает и уже оценённое — после смены профиля поиска
+    или движка. Прежние оценки остаются в истории.
+    """
     outcome = ScoreOutcome()
     master = load_master_profile(config.root)
     matchers: dict[str, object] = {}
@@ -171,7 +175,7 @@ def run_score(config: Config) -> ScoreOutcome:
 
     conn = open_db(config.db_path)
     try:
-        for row in unscored(conn, config.profile.name):
+        for row in unscored(conn, config.profile.name, again=again):
             assessment = assess(vacancy_from_row(row))
             _save(conn, row["id"], config.profile.name, assessment)
             outcome.scored += 1

@@ -383,11 +383,15 @@ def search() -> None:
 
 
 @app.command()
-def score() -> None:
+def score(
+    again: bool = typer.Option(
+        False, "--again", help="Переоценить и уже оценённые: сменился профиль или движок"
+    ),
+) -> None:
     """Оценить вакансии, которые ещё не оценивались под активный профиль."""
     config = _config()
     try:
-        outcome = run_score(config)
+        outcome = run_score(config, again=again)
     except ConfigError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(2) from exc
