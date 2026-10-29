@@ -113,7 +113,12 @@ class LLM:
 
     @staticmethod
     def _explain(exc) -> str:
-        """Понятное сообщение, без ключа внутри."""
+        """Понятное сообщение, без ключа внутри.
+
+        Текст ошибки от API пересказывается как есть: именно он объясняет,
+        что случилось. Раньше 400 превращался в «ошибка 400», и настоящая
+        причина — «на счету не осталось средств» — терялась совсем.
+        """
         code = getattr(exc, "status_code", None)
         if code == 401:
             return "Anthropic API: ключ не принят (401)"
@@ -121,4 +126,9 @@ class LLM:
             return "Anthropic API: лимит запросов (429), нужна пауза"
         if code and code >= 500:
             return f"Anthropic API недоступен ({code})"
-        return f"Anthropic API: ошибка {code}"
+
+        подробности = getattr(exc, "message", None)
+        body = getattr(exc, "body", None)
+        if isinstance(body, dict):
+            подробности = (body.get("error") or {}).get("message") or подробности
+        return f"Anthropic API: ошибка {code}" + (f" — {подробности}" if подробности else "")

@@ -328,6 +328,29 @@ def test_при_осечке_модели_оценка_делается_лока
         conn.close()
 
 
+def test_ошибка_api_объясняет_причину(config):
+    """400 с текстом «кончились средства» не должен превращаться в «ошибка 400»."""
+    from jobagent.agents.llm import LLM
+
+    class Ошибка(Exception):
+        status_code = 400
+        message = "Your credit balance is too low to access the Anthropic API."
+        body = {"error": {"message": message}}
+
+    текст = LLM(config)._explain(Ошибка())
+    assert "400" in текст
+    assert "credit balance is too low" in текст
+
+
+def test_коды_401_и_429_объясняются_своими_словами(config):
+    from jobagent.agents.llm import LLM
+
+    llm = LLM(config)
+    assert "ключ не принят" in llm._explain(type("E", (), {"status_code": 401})())
+    assert "лимит запросов" in llm._explain(type("E", (), {"status_code": 429})())
+    assert "недоступен" in llm._explain(type("E", (), {"status_code": 503})())
+
+
 def test_письмо_от_модели_проходит_ту_же_проверку(config, sample_profile):
     """Схема ответа и сборка письма — на месте, без обращения наружу."""
     writer = ModelLetterWriter(config, sample_profile)
