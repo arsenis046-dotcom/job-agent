@@ -154,6 +154,24 @@ class MasterProfile(BaseModel):
     constraints: Constraints = Constraints()
 
     @property
+    def known_skills(self) -> list[str]:
+        """Чем я владею по данным профиля: раздел навыков плюс стек проектов.
+
+        Стек проекта — такой же факт из профиля, как запись в разделе навыков:
+        если я собрал сервис на FastAPI и PostgreSQL, это владение, даже если
+        в `skills` они ещё не выписаны. Без этого отчёт показывал «закрыто 0%»
+        у человека с четырьмя работающими сервисами.
+        """
+        seen: dict[str, str] = {}
+        for group in (
+            [skill for _, items in self.skills.groups() for skill in items],
+            [item for project in self.projects for item in project.stack],
+        ):
+            for skill in group:
+                seen.setdefault(skill.strip().casefold(), skill.strip())
+        return list(seen.values())
+
+    @property
     def resume_projects(self) -> list[Project]:
         """Проекты для базового резюме, в порядке убывания значимости.
 

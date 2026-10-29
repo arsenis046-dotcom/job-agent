@@ -23,6 +23,13 @@ def _money(value: int | None) -> str:
     return "—" if value is None else f"{value:,}".replace(",", " ")
 
 
+def вакансий(count: int) -> str:
+    """«в 1 вакансии», «в 2 вакансиях», «в 5 вакансиях» — без «в 1 вакансиях»."""
+    if count % 10 == 1 and count % 100 != 11:
+        return f"{count} вакансии"
+    return f"{count} вакансиях"
+
+
 def build(config: Config) -> tuple[MarketReport, Advice]:
     """Считает рынок и советы по портфолио, сохраняя снимок для динамики."""
     master = load_master_profile(config.root)
@@ -88,7 +95,7 @@ def write_market_report(config: Config, day: date | None = None) -> Path:
         )
         lines.append("")
     if advice.gaps:
-        lines += [f"- {term} — в {count} вакансиях" for term, count in advice.gaps]
+        lines += [f"- {term} — в {вакансий(count)}" for term, count in advice.gaps]
     else:
         lines.append("Пробелов среди частых требований не нашлось.")
 

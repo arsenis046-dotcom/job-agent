@@ -61,9 +61,7 @@ class LocalMatcher:
     def __init__(self, config: Config, profile: MasterProfile) -> None:
         self.config = config
         self.search = config.profile
-        self.my_skills = [
-            skill for _, items in profile.skills.groups() for skill in items
-        ]
+        self.my_skills = profile.known_skills  # раздел навыков плюс стек проектов
 
     def assess(self, vacancy: Vacancy) -> Assessment:
         haystack = " ".join(

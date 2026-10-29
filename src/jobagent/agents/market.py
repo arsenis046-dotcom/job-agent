@@ -102,16 +102,23 @@ def _salary_value(row: sqlite3.Row) -> int | None:
     return low or high or None
 
 
+def _mentions(haystack: str, term: str) -> bool:
+    """Термин как отдельное слово: «git» не должен находиться внутри «github»."""
+    return re.search(rf"(?<![\w-]){re.escape(term)}(?![\w-])", haystack) is not None
+
+
 def _terms(texts: list[str], extra: list[str]) -> list[tuple[str, int]]:
     """Сколько вакансий упоминает каждый термин."""
     counts: dict[str, int] = {}
     for text in texts:
         lowered = text.casefold()
-        seen = {
-            token.casefold()
-            for token in TOKEN.findall(text)
-            if len(token) >= MIN_TERM_LENGTH and token.casefold() not in NOISE
-        }
+        seen = set()
+        for token in TOKEN.findall(text):
+            # «AI-разработчик» режется токенизатором на «AI-», и хвост от
+            # кириллицы остаётся висеть дефисом — его надо убрать
+            token = token.strip("-.").casefold()
+            if len(token) >= MIN_TERM_LENGTH and token not in NOISE:
+                seen.add(token)
         # многословные названия из профиля токенизатором не ловятся
         seen |= {phrase.casefold() for phrase in extra if phrase.casefold() in lowered}
         for term in seen:
@@ -136,7 +143,7 @@ def analyze(
     texts = [
         " ".join(p for p in (r["title"], r["description"]) if p) for r in rows
     ]
-    my_skills = [s for _, items in master.skills.groups() for s in items]
+    my_skills = master.known_skills
     phrases = [s for s in my_skills if " " in s]
 
     snapshot = Snapshot(
@@ -153,9 +160,11 @@ def analyze(
         snapshot.salary_p25 = ordered[len(ordered) // 4]
         snapshot.salary_p75 = ordered[(len(ordered) * 3) // 4]
 
-    mine = {s.casefold() for s in my_skills}
-    covered = [(t, c) for t, c in snapshot.terms if t in mine]
-    uncovered = [(t, c) for t, c in snapshot.terms if t not in mine]
+    # «docker» должен попадать в «Docker Compose»: ищем термин словом внутри
+    # названий моих навыков, а не только точное совпадение
+    mine = " ".join(my_skills).casefold()
+    covered = [(t, c) for t, c in snapshot.terms if _mentions(mine, t)]
+    uncovered = [(t, c) for t, c in snapshot.terms if not _mentions(mine, t)]
 
     return MarketReport(
         current=snapshot,

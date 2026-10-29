@@ -66,6 +66,69 @@ def test_термин_считается_по_числу_вакансий_а_н�
     )
 
 
+def test_стек_проектов_считается_владением(sample_profile):
+    """У человека с четырьмя сервисами «закрыто 0%» быть не может."""
+    from jobagent.profile import Skills
+
+    без_навыков = sample_profile.model_copy(update={"skills": Skills()})
+    assert без_навыков.skills.total == 0
+    умею = {s.casefold() for s in без_навыков.known_skills}
+    assert {"python", "aiogram", "sqlite"} <= умею, "стек проекта — тоже факт профиля"
+
+
+def test_термин_находится_внутри_составного_названия(repo, config, sample_profile):
+    """«docker» в вакансии закрыт навыком «Docker Compose»."""
+    from jobagent.profile import Skills
+
+    профиль = sample_profile.model_copy(
+        update={"skills": Skills(tools=["Docker Compose"]), "projects": []}
+    )
+    conn = open_db(config.db_path)
+    try:
+        upsert_vacancy(
+            conn,
+            platform="superjob",
+            external_id="1",
+            title="Разработчик",
+            description="Нужен Docker и Kubernetes, плюс github",
+        )
+    finally:
+        conn.close()
+
+    report = отчёт(config, профиль)
+    assert "docker" in {t for t, _ in report.covered}
+    assert "kubernetes" in {t for t, _ in report.uncovered}
+    assert "github" in {t for t, _ in report.uncovered}, "«git» внутри «github» не считается"
+
+
+def test_обрывки_с_дефисом_в_термины_не_попадают(repo, config, sample_profile):
+    """«AI-разработчик» токенизатор режет на «AI-», и дефис остаётся висеть."""
+    conn = open_db(config.db_path)
+    try:
+        upsert_vacancy(
+            conn,
+            platform="superjob",
+            external_id="1",
+            title="AI-разработчик",
+            description="Python-разработчик нужен",
+        )
+    finally:
+        conn.close()
+    terms = отчёт(config, sample_profile).current.terms_dict
+    assert "ai-" not in terms and "python-" not in terms
+    assert "ai" not in terms, "двухбуквенный шум отфильтрован списком"
+    assert terms["python"] == 1
+
+
+def test_число_вакансий_склоняется():
+    from jobagent.reports.market import вакансий
+
+    assert вакансий(1) == "1 вакансии"
+    assert вакансий(2) == "2 вакансиях"
+    assert вакансий(11) == "11 вакансиях", "одиннадцать — не «вакансии»"
+    assert вакансий(21) == "21 вакансии"
+
+
 def test_зарплатные_квартили_считаются_по_известным_вилкам(рынок, sample_profile):
     snapshot = отчёт(рынок, sample_profile).current
     assert snapshot.vacancies == 4

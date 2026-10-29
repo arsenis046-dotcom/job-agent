@@ -86,7 +86,7 @@ def prepare(
 ) -> Dossier:
     text = " ".join(p for p in (vacancy.title, vacancy.description) if p)
     lowered = text.casefold()
-    my_skills = [s for _, items in master.skills.groups() for s in items]
+    my_skills = master.known_skills
     mine = {s.casefold() for s in my_skills}
 
     terms = {t.casefold() for t in TOKEN.findall(text) if len(t) > 2}
