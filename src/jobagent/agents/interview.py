@@ -51,29 +51,46 @@ class Dossier:
 
 
 def _honest_answer(master: MasterProfile) -> str:
-    """Про отсутствие коммерческого опыта — фактами, без оправданий."""
+    """Про опыт — фактами, без оправданий и без преувеличений.
+
+    Ответ зависит от того, что в профиле. Опыт в ИТ есть, но не на должности
+    разработчика — об этом и говорим прямо: должность называлась иначе,
+    а системы писал и внедрял.
+    """
     projects = master.resume_projects
     working = [p for p in projects if p.in_production]
     measured = [p for p in projects if p.result]
+    at_work = [p for p in projects if p.context and "рабоч" in p.context.casefold()]
+    jobs = master.employment_history
 
-    parts = ["Коммерческого опыта по найму у меня нет, и я это не скрываю."]
-    if projects:
+    parts: list[str] = []
+    if jobs:
         parts.append(
-            f"Есть {len(projects)} собственных проектов"
-            + (
-                f", из них {len(working)} работают у живых людей: "
-                + ", ".join(p.name or p.slug for p in working)
-                if working
-                else ""
+            f"На должности разработчика я не работал: моя должность — "
+            f"{jobs[0].position.lower()}"
+            + (f", {jobs[0].company}" if jobs[0].company else "")
+            + "."
+        )
+        if at_work:
+            parts.append(
+                f"Но {len(at_work)} из систем, которые я показываю, написаны и "
+                "внедрены именно там, на инфраструктуре работодателя: "
+                + ", ".join(p.name or p.slug for p in at_work)
+                + "."
             )
+    else:
+        parts.append("Коммерческого опыта по найму у меня нет, и я это не скрываю.")
+
+    if working:
+        parts.append(
+            f"Работают у живых людей {len(working)}: "
+            + ", ".join(p.name or p.slug for p in working)
             + "."
         )
     if measured:
         best = measured[0]
         parts.append(f"Результат измерен, не на словах: {best.name} — {best.result}")
-    parts.append(
-        "Эти проекты я вёл целиком: от требований до развёртывания и поддержки."
-    )
+    parts.append("Каждую вёл целиком: от требований до развёртывания и поддержки.")
     return " ".join(parts)
 
 

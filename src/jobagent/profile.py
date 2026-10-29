@@ -44,12 +44,32 @@ class Position(BaseModel):
     schedule: list[str] = []
 
 
+class Job(BaseModel):
+    """Место работы."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    position: str
+    company: str | None = None
+    period: str | None = None        # как писать в резюме: «январь 2025 — сейчас»
+    started: str | None = None       # ГГГГ-ММ, для сортировки
+    ended: str | None = None
+    duties: list[str] = []
+    achievements: list[str] = []
+
+
 class Project(BaseModel):
-    """Пет-проект. Подаётся как проект, а не как работа по найму."""
+    """Сделанная система: рабочая задача или свой проект.
+
+    `context` отвечает на вопрос, который работодатель задаёт первым:
+    это было сделано на работе или дома. Подменять одно другим нельзя
+    ни в ту, ни в другую сторону.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     slug: str
+    context: str | None = None
     name: str | None = None
     one_liner: str | None = None
     problem: str | None = None
@@ -145,7 +165,7 @@ class MasterProfile(BaseModel):
     person: Person = Person()
     position: Position = Position()
     summary: str | None = None
-    employment_history: list[dict[str, Any]] = []
+    employment_history: list[Job] = []
     projects: list[Project] = []
     skills: Skills = Skills()
     languages: list[Language] = []

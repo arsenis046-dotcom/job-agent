@@ -16,17 +16,37 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ..profile import MasterProfile, Project, blocking_gaps
+from ..profile import Job, MasterProfile, Project, blocking_gaps
 
 Kind = Literal["name", "subtitle", "contact", "text", "item", "detail"]
 
 # Закрытый список ярлыков. Ничего, кроме них, в резюме не пишется.
 LABELS = frozenset(
-    {"Стек", "Моя роль", "Результат", "Ссылка", "Статус", "Уровень"}
+    {
+        "Стек",
+        "Моя роль",
+        "Результат",
+        "Ссылка",
+        "Статус",
+        "Уровень",
+        "Период",
+        "Обязанности",
+        "Сделано",
+        "Где сделано",
+    }
 )
 
 # Стандартные заголовки, в фиксированном порядке — так их ждёт ATS.
-HEADINGS = ("Контакты", "О себе", "Навыки", "Проекты", "Образование", "Языки", "Сертификаты")
+HEADINGS = (
+    "Контакты",
+    "О себе",
+    "Навыки",
+    "Опыт работы",
+    "Проекты",
+    "Образование",
+    "Языки",
+    "Сертификаты",
+)
 
 
 class ResumeError(RuntimeError):
@@ -151,6 +171,13 @@ def build_resume(profile: MasterProfile) -> Resume:
             )
     resume.sections.append(skills)
 
+    # --- Опыт работы -------------------------------------------------------
+    if profile.employment_history:
+        experience = Section("Опыт работы")
+        for i, job in enumerate(profile.employment_history):
+            experience.lines.extend(_job_lines(job, i))
+        resume.sections.append(experience)
+
     # --- Проекты -----------------------------------------------------------
     projects = Section("Проекты")
     for project in profile.resume_projects:
@@ -220,8 +247,51 @@ def _group_field(group: str) -> str:
     }[group]
 
 
+def _job_lines(job: Job, index: int) -> list[Line]:
+    """Место работы: должность, компания, период, обязанности, достижения."""
+    base = f"employment_history[{index}]"
+    evidence = (job.position,) + ((job.company,) if job.company else ())
+    lines = [
+        Line(kind="item", evidence=evidence, source=f"{base}.position", sep=" — ")
+    ]
+    if job.period:
+        lines.append(
+            Line(
+                kind="detail",
+                evidence=(job.period,),
+                source=f"{base}.period",
+                label="Период",
+            )
+        )
+    if job.duties:
+        lines.append(
+            Line(
+                kind="detail",
+                evidence=tuple(job.duties),
+                source=f"{base}.duties",
+                label="Обязанности",
+                sep="; ",
+            )
+        )
+    if job.achievements:
+        lines.append(
+            Line(
+                kind="detail",
+                evidence=tuple(job.achievements),
+                source=f"{base}.achievements",
+                label="Сделано",
+                sep="; ",
+            )
+        )
+    return lines
+
+
 def _project_lines(project: Project) -> list[Line]:
-    """Проект подаётся как проект: что это, стек, что сделал я, результат, ссылка."""
+    """Что это, где сделано, стек, что сделал я, результат, ссылка.
+
+    `Где сделано` стоит сразу после названия: работодатель спрашивает об этом
+    первым, и ответ должен быть виден, а не подразумеваться.
+    """
     base = f"projects[{project.slug}]"
     lines = [
         Line(
@@ -230,6 +300,17 @@ def _project_lines(project: Project) -> list[Line]:
             source=f"{base}.name",
             sep=" — ",
         ),
+    ]
+    if project.context:
+        lines.append(
+            Line(
+                kind="detail",
+                evidence=(_str(project.context),),
+                source=f"{base}.context",
+                label="Где сделано",
+            )
+        )
+    lines += [
         Line(
             kind="detail",
             evidence=tuple(_str(s) for s in project.stack),

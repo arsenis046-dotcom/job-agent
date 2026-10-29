@@ -83,7 +83,47 @@ def test_разделы_стандартные_и_в_нужном_порядке
     for heading in document.headings:
         assert heading in HEADINGS, "самодельных заголовков ATS не ждёт"
     assert "Проекты" in document.headings
-    assert "Опыт работы" not in document.headings, "коммерческого опыта нет"
+    assert "Опыт работы" not in document.headings, (
+        "у этого профиля опыта работы нет — пустого раздела быть не должно"
+    )
+
+
+def test_опыт_работы_попадает_в_резюме(sample_profile):
+    from jobagent.profile import Job
+
+    профиль = sample_profile.model_copy(
+        update={
+            "employment_history": [
+                Job(
+                    position="Специалист технической поддержки",
+                    company="ООО Пример",
+                    period="январь 2025 — настоящее время",
+                    duties=["приём и решение заявок"],
+                    achievements=["внедрил внутренний сервис"],
+                )
+            ]
+        }
+    )
+    document = build_resume(профиль)
+    assert document.headings.index("Опыт работы") < document.headings.index("Проекты")
+
+    раздел = next(s for s in document.sections if s.heading == "Опыт работы")
+    тексты = [line.text for line in раздел.lines]
+    assert тексты[0] == "Специалист технической поддержки — ООО Пример"
+    assert "Период: январь 2025 — настоящее время" in тексты
+    assert "Обязанности: приём и решение заявок" in тексты
+    assert "Сделано: внедрил внутренний сервис" in тексты
+
+
+def test_где_сделан_проект_видно_сразу_после_названия(sample_profile):
+    """Работодатель спрашивает об этом первым."""
+    project = sample_profile.projects[0].model_copy(
+        update={"context": "рабочая задача в ООО Пример"}
+    )
+    document = build_resume(sample_profile.model_copy(update={"projects": [project]}))
+    проекты = next(s for s in document.sections if s.heading == "Проекты")
+    assert проекты.lines[1].label == "Где сделано"
+    assert проекты.lines[1].text == "Где сделано: рабочая задача в ООО Пример"
 
 
 def test_проект_подан_как_проект(sample_profile):
