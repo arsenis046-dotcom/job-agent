@@ -35,11 +35,20 @@ def repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def config(repo: Path) -> Config:
-    """Рабочая конфигурация, но без пауз между запросами — тесты не ждут сеть."""
+    """Рабочая конфигурация, но без пауз между запросами и без городов.
+
+    Паузы — чтобы тесты не ждали. Города — чтобы проверки механики не
+    зависели от того, в каком городе я сейчас ищу: с заданным регионом
+    коннектор сперва обращается к справочнику городов площадки.
+    Само поведение с городами проверяется отдельно.
+    """
     config = load_config(repo)
     limits = config.settings.limits.model_copy(update={"request_delay_seconds": 0.0})
     return config.model_copy(
-        update={"settings": config.settings.model_copy(update={"limits": limits})}
+        update={
+            "settings": config.settings.model_copy(update={"limits": limits}),
+            "profile": config.profile.model_copy(update={"regions": []}),
+        }
     )
 
 

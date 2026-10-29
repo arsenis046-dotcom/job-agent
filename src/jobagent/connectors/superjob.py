@@ -9,12 +9,34 @@
 
 from __future__ import annotations
 
+import html
+import re
 from collections.abc import Iterator
+from datetime import datetime, timezone
 
 from ..config import Access, require_env
 from .base import ApplyResult, Connector, ConnectorError, Vacancy
 
 API = "https://api.superjob.ru/2.0"
+
+ТЕГИ = re.compile(r"<[^>]+>")
+
+
+def _без_тегов(text: str | None) -> str | None:
+    """vacancyRichText приходит с HTML-разметкой."""
+    if not text:
+        return None
+    return html.unescape(ТЕГИ.sub(" ", text)).strip() or None
+
+
+def _дата(value) -> str | None:
+    """`date_published` приходит временной меткой Unix, а не строкой."""
+    if not value:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return str(value)
 
 
 class SuperJobConnector(Connector):
@@ -70,10 +92,37 @@ class SuperJobConnector(Connector):
 
     # --- поиск -------------------------------------------------------------
 
+    def towns(self, names: list[str]) -> list[int]:
+        """Названия городов из профиля → идентификаторы SuperJob.
+
+        Без этого поиск отдаёт вакансии по всей стране: в выдаче по
+        «Python» оказывались Казань и Петербург, хотя переезд не
+        рассматривается.
+        """
+        ids: list[int] = []
+        for name in names:
+            if name.strip().casefold() in ("удалённо", "удаленно", "remote"):
+                continue  # не город, а формат работы — он проверяется оценкой
+            data = self._get(
+                f"{API}/towns/",
+                params={"keyword": name, "all": 1},
+                headers=self.app_headers,
+            ).json()
+            точное = [
+                t
+                for t in data.get("objects", [])
+                if (t.get("title") or "").casefold() == name.strip().casefold()
+            ]
+            найденные = точное or data.get("objects", [])
+            if найденные:
+                ids.append(int(найденные[0]["id"]))
+        return ids
+
     def search(self) -> Iterator[Vacancy]:
         if self.access is not Access.api:
             return
         profile = self.config.profile
+        towns = self.towns(profile.regions) if profile.regions else []
         for keyword in profile.keywords:
             page = 0
             while True:
@@ -82,6 +131,8 @@ class SuperJobConnector(Connector):
                     "count": 100,
                     "page": page,
                 }
+                if towns:
+                    params["t"] = towns
                 if profile.salary_min:
                     params["payment_from"] = profile.salary_min
                     # без этого в выдачу лезут вакансии «зарплата по договорённости»
@@ -90,6 +141,8 @@ class SuperJobConnector(Connector):
                     f"{API}/vacancies/", params=params, headers=self.app_headers
                 ).json()
                 for item in data.get("objects", []):
+                    if self._закрыта(item):
+                        continue
                     yield self._from_api(item)
                 if not data.get("more"):
                     break
@@ -99,19 +152,28 @@ class SuperJobConnector(Connector):
         return Vacancy(
             platform=self.name,
             external_id=str(item["id"]),
-            title=item.get("profession") or "",
+            # в названии встречаются мнемоники HTML: «Python &amp; React»
+            title=html.unescape(item.get("profession") or ""),
             url=item.get("link"),
             company=(item.get("client") or {}).get("title") or item.get("firm_name"),
             area=(item.get("town") or {}).get("title"),
+            # 0 означает «не указано», а не ноль рублей
             salary_from=item.get("payment_from") or None,
             salary_to=item.get("payment_to") or None,
             currency=item.get("currency"),
             schedule=(item.get("type_of_work") or {}).get("title"),
             employment=(item.get("place_of_work") or {}).get("title"),
-            description=item.get("vacancyRichText") or item.get("candidat"),
-            published_at=str(item.get("date_published") or "") or None,
+            # candidat — тот же текст без разметки; vacancyRichText приходит
+            # с тегами <b> и <br />, и тащить их в резюме, письма и промпты ни к чему
+            description=item.get("candidat") or _без_тегов(item.get("vacancyRichText")),
+            published_at=_дата(item.get("date_published")),
             raw=item,
         )
+
+    @staticmethod
+    def _закрыта(item: dict) -> bool:
+        """Архивную или закрытую вакансию в базу не берём (п. 3.11 по смыслу)."""
+        return bool(item.get("is_closed") or item.get("is_archive"))
 
     # --- отклик ------------------------------------------------------------
 

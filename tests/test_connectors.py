@@ -89,6 +89,118 @@ def test_hh_в_режиме_manual_ничего_не_ищет(config):
         assert route.call_count == 0
 
 
+@respx.mock
+def test_разбор_выдачи_superjob_по_живому_ответу(config, monkeypatch):
+    """Поля и их форма взяты из настоящего ответа (tools/probe_superjob.py)."""
+    monkeypatch.setenv("SUPERJOB_SECRET", "test-secret")
+    respx.get("https://api.superjob.ru/2.0/vacancies/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "objects": [
+                    {
+                        "id": 52150505,
+                        "profession": "Специалист технической поддержки",
+                        "link": "https://www.superjob.ru/vakansii/x-52150505.html",
+                        "client": {"id": 4970534, "title": "Flowwow"},
+                        "town": {"id": 4, "title": "Москва"},
+                        "payment_from": 0,
+                        "payment_to": 0,
+                        "currency": "rub",
+                        "type_of_work": {"id": 6, "title": "Полный рабочий день"},
+                        "candidat": "Требования\n* Python и Docker",
+                        "vacancyRichText": "<b>Требования</b><br />* Python &amp; Docker",
+                        "date_published": 1792856488,
+                    }
+                ],
+                "more": False,
+            },
+        )
+    )
+    vacancy = next(iter(build_connector("superjob", config).search()))
+
+    assert vacancy.salary_from is None and vacancy.salary_to is None, (
+        "0 в вилке означает «не указано»"
+    )
+    assert vacancy.description == "Требования\n* Python и Docker", (
+        "берём candidat: в vacancyRichText приходят теги"
+    )
+    assert "<b>" not in (vacancy.description or "")
+    assert vacancy.published_at.startswith("2026-"), (
+        "date_published приходит временной меткой Unix, а не строкой"
+    )
+
+
+def test_разметка_вычищается_если_простого_текста_нет(config, monkeypatch):
+    from jobagent.connectors.superjob import SuperJobConnector
+
+    monkeypatch.setenv("SUPERJOB_SECRET", "test-secret")
+    vacancy = SuperJobConnector(config)._from_api(
+        {
+            "id": 1,
+            "profession": "Разработчик",
+            "vacancyRichText": "<b>Требования</b><br />Python &amp; Docker",
+        }
+    )
+    assert "<" not in vacancy.description
+    assert "&" in vacancy.description, "мнемоники HTML раскрыты: &amp; -> &"
+
+
+@respx.mock
+def test_мнемоники_html_в_названии_раскрываются(config, monkeypatch):
+    from jobagent.connectors.superjob import SuperJobConnector
+
+    monkeypatch.setenv("SUPERJOB_SECRET", "test-secret")
+    vacancy = SuperJobConnector(config)._from_api(
+        {"id": 1, "profession": "Mod Developer (Python &amp; React)"}
+    )
+    assert vacancy.title == "Mod Developer (Python & React)"
+
+
+@respx.mock
+def test_города_профиля_превращаются_в_фильтр(config, monkeypatch):
+    """Без этого выдача приходит по всей стране, хотя переезда нет."""
+    monkeypatch.setenv("SUPERJOB_SECRET", "test-secret")
+    respx.get("https://api.superjob.ru/2.0/towns/").mock(
+        return_value=httpx.Response(
+            200, json={"objects": [{"id": 4, "title": "Москва"}]}
+        )
+    )
+    выдача = respx.get("https://api.superjob.ru/2.0/vacancies/").mock(
+        return_value=httpx.Response(200, json={"objects": [], "more": False})
+    )
+    профиль = config.profile.model_copy(update={"regions": ["Москва", "удалённо"]})
+    list(build_connector("superjob", config.model_copy(update={"profile": профиль})).search())
+
+    assert выдача.called
+    параметры = httpx.QueryParams(выдача.calls[0].request.url.query)
+    assert параметры.get_list("t") == ["4"], (
+        "город передан фильтром площадки, а «удалённо» городом не считается"
+    )
+
+
+@respx.mock
+def test_закрытые_вакансии_в_базу_не_идут(config, monkeypatch):
+    monkeypatch.setenv("SUPERJOB_SECRET", "test-secret")
+    respx.get("https://api.superjob.ru/2.0/vacancies/").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "objects": [
+                    {"id": 1, "profession": "Живая", "candidat": "текст"},
+                    {"id": 2, "profession": "Закрытая", "candidat": "текст",
+                     "is_closed": True},
+                    {"id": 3, "profession": "В архиве", "candidat": "текст",
+                     "is_archive": True},
+                ],
+                "more": False,
+            },
+        )
+    )
+    найдено = {v.external_id for v in build_connector("superjob", config).search()}
+    assert найдено == {"1"}
+
+
 def test_включены_только_настроенные_площадки(config):
     names = {c.name for c in enabled_connectors(config)}
     assert names == {"hh", "superjob"}
