@@ -9,19 +9,24 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from .agents.fact_checker import FactChecker
+from .agents.letter import TemplateLetterWriter
 from .agents.matcher import APPLY, ASK, SKIP, Assessment, LocalMatcher
-from .config import Config, Mode
+from .config import Config, Mode, env
 from .connectors import ConnectorError, Vacancy, enabled_connectors
 from .db import (
-    delete_vacancies,
     already_applied,
+    delete_vacancies,
+    now,
     open_db,
     save_score,
+    scored,
     sent_today,
     stale,
     unscored,
     upsert_vacancy,
 )
+from .documents import build_resume
 from .profile import load_master_profile
 
 
@@ -227,10 +232,137 @@ def run_prune(config: Config, days: int = 14) -> PruneOutcome:
     return outcome
 
 
-def run_apply(config: Config) -> None:
-    """Фаза 3. Отправка возможна только после Fact Checker и в пределах лимита."""
-    if config.settings.mode is Mode.auto:
-        raise NotImplementedError(
-            "Фаза 3: режим auto включается отдельной командой после подтверждения"
-        )
-    raise NotImplementedError("Фаза 3: Letter Writer, Fact Checker, Applier")
+@dataclass
+class ApplyOutcome:
+    budget: int = 0
+    sent: int = 0
+    drafts: int = 0
+    awaiting: int = 0
+    blocked: int = 0
+    failed: int = 0
+    skipped: int = 0
+    notes: list[str] = field(default_factory=list)
+
+    def __str__(self) -> str:
+        parts = [
+            f"дневной остаток лимита был {self.budget}",
+            f"отправлено {self.sent}",
+            f"черновиков {self.drafts}",
+            f"ждут подтверждения {self.awaiting}",
+            f"заблокировано проверкой фактов {self.blocked}",
+        ]
+        if self.failed:
+            parts.append(f"ошибок отправки {self.failed}")
+        if self.skipped:
+            parts.append(f"пропущено {self.skipped}")
+        text = ", ".join(parts)
+        if self.notes:
+            text += "\n" + "\n".join(f"  - {n}" for n in self.notes)
+        return text
+
+
+def _resume_id(config: Config, platform: str) -> str | None:
+    """Идентификатор моего резюме на площадке. Без него отправлять нечего."""
+    variable = {"superjob": "SUPERJOB_CV_ID", "hh": "HH_RESUME_ID"}.get(platform)
+    return env(variable, config.root) if variable else None
+
+
+def run_apply(config: Config, limit: int | None = None) -> ApplyOutcome:
+    """Applier: письмо, обязательная проверка фактов, отправка в пределах лимита.
+
+    Порядок неслучаен: пока резюме не прошло Fact Checker, не отправляется
+    ничего и никуда. Проверка письма — для каждой вакансии отдельно, потому
+    что письмо своё у каждой.
+    """
+    outcome = ApplyOutcome()
+    profile = load_master_profile(config.root)
+    resume = build_resume(profile)  # упадёт понятной ошибкой, если нет фактов
+
+    checker = FactChecker(profile)
+    resume_verdict = checker.check_resume(resume)
+    if not resume_verdict.ok:
+        outcome.notes.append(str(resume_verdict))
+        return outcome
+
+    writer = TemplateLetterWriter(profile)
+    budget = daily_budget(config)
+    if limit is not None:
+        budget = min(budget, limit)
+    outcome.budget = budget
+
+    connectors = {c.name: c for c in enabled_connectors(config)}
+    conn = open_db(config.db_path)
+    try:
+        for row in scored(conn, config.profile.name):
+            if budget <= 0:
+                outcome.notes.append("дневной лимит исчерпан, остальное — в другой раз")
+                break
+            if row["verdict"] != APPLY or row["applied"]:
+                continue
+            connector = connectors.get(row["platform"])
+            if connector is None:
+                outcome.skipped += 1
+                continue
+
+            vacancy = _vacancy_from_row(row)
+            letter = writer.write(vacancy)
+            letter_verdict = checker.check_letter(
+                letter.text, " ".join(p for p in (row["title"], row["description"]) if p)
+            )
+            if not letter_verdict.ok:
+                outcome.blocked += 1
+                outcome.notes.append(f"{row['title']}: {letter_verdict}")
+                _record(conn, row, config, resume, letter, status="blocked")
+                continue
+
+            result = connector.apply(
+                vacancy,
+                resume_id=_resume_id(config, row["platform"]) or "",
+                message=letter.text,
+            )
+            _record(conn, row, config, resume, letter, status=result.status, result=result)
+
+            if result.sent:
+                outcome.sent += 1
+                budget -= 1
+            elif result.status == "draft":
+                outcome.drafts += 1
+                budget -= 1
+            elif result.status == "awaiting":
+                outcome.awaiting += 1
+                budget -= 1
+            elif result.status == "failed":
+                outcome.failed += 1
+            else:
+                outcome.skipped += 1
+            if result.detail:
+                outcome.notes.append(f"{row['title']}: {result.detail}")
+    finally:
+        conn.close()
+        for connector in connectors.values():
+            connector.close()
+    return outcome
+
+
+def _record(conn, row, config: Config, resume, letter, *, status: str, result=None) -> None:
+    """Для каждого отклика сохраняем точные тексты — чтобы можно было перечитать."""
+    conn.execute(
+        "INSERT INTO applications (vacancy_id, score_id, platform, mode, status, "
+        "resume_text, letter_text, platform_response, error, created_at, sent_at) "
+        "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            row["id"],
+            row["platform"],
+            config.settings.mode.value,
+            status,
+            resume.text(),
+            letter.text,
+            json.dumps(result.response, ensure_ascii=False)
+            if result is not None and result.response
+            else None,
+            result.detail if result is not None and status == "failed" else None,
+            now(),
+            now() if status == "sent" else None,
+        ),
+    )
+    conn.commit()

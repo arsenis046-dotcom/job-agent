@@ -211,6 +211,20 @@ def set_active_profile(name: str, root: Path | None = None) -> None:
     path.write_text("".join(lines), encoding="utf-8", newline="\n")
 
 
+def set_mode(mode: Mode, root: Path | None = None) -> None:
+    """Меняет режим в settings.yaml, не затрагивая остальной файл."""
+    root = root or project_root()
+    path = root / "config" / "settings.yaml"
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith("mode:"):
+            lines[i] = f"mode: {mode.value}\n"
+            break
+    else:
+        raise ConfigError("в settings.yaml не нашлась строка mode")
+    path.write_text("".join(lines), encoding="utf-8", newline="\n")
+
+
 _dotenv_loaded = False
 
 

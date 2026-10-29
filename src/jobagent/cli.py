@@ -12,10 +12,12 @@ from . import __version__
 from .config import (
     Config,
     ConfigError,
+    Mode,
     available_profiles,
     env,
     load_config,
     set_active_profile,
+    set_mode,
 )
 from .connectors import REGISTRY
 from .db import SCHEMA_VERSION, open_db, sent_today
@@ -27,7 +29,7 @@ from .documents import (
     render_docx,
     render_pdf,
 )
-from .pipeline import run_prune, run_score, run_search
+from .pipeline import run_apply, run_prune, run_score, run_search
 from .profile import find_gaps, load_master_profile
 from .reports.vacancies import write_report
 
@@ -302,9 +304,51 @@ def prune(
 
 
 @app.command()
-def apply() -> None:
-    """Подготовить и (в режимах approve/auto) отправить отклики."""
-    _phase(3, "Letter Writer, Fact Checker, Applier")
+def apply(
+    limit: int = typer.Option(None, help="Не больше этого числа за запуск"),
+) -> None:
+    """Подготовить письма, проверить факты и (в approve/auto) отправить отклики."""
+    config = _config()
+    try:
+        outcome = run_apply(config, limit)
+    except (ConfigError, ResumeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"Режим: [green]{config.settings.mode.value}[/green]")
+    console.print(str(outcome))
+    if outcome.blocked:
+        raise typer.Exit(1)
+
+
+@app.command()
+def mode(
+    value: str = typer.Argument(None, help="dry_run | approve | auto"),
+    yes: bool = typer.Option(False, "--yes", help="Подтвердить включение auto"),
+) -> None:
+    """Показать или сменить режим работы."""
+    config = _config()
+    if value is None:
+        console.print(f"Режим: [green]{config.settings.mode.value}[/green]")
+        return
+    try:
+        new_mode = Mode(value)
+    except ValueError as exc:
+        console.print(f"[red]Неизвестный режим {value!r}: dry_run, approve или auto[/red]")
+        raise typer.Exit(2) from exc
+
+    if new_mode is Mode.auto and not yes:
+        # ТЗ: auto включается отдельной командой после подтверждения
+        console.print(
+            "[yellow]Режим auto отправляет отклики сам[/yellow], без показа каждого: "
+            f"до {config.settings.limits.applications_per_day} в сутки, "
+            f"с оценкой не ниже {config.threshold}.\n"
+            "Отклик необратим: работодатель увидит его сразу.\n"
+            "Если согласен — повтори команду с [green]--yes[/green]."
+        )
+        raise typer.Exit(1)
+
+    set_mode(new_mode, config.root)
+    console.print(f"Режим: [green]{new_mode.value}[/green]")
 
 
 @app.command()
