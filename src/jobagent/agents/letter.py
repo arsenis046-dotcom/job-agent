@@ -14,8 +14,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+from pydantic import Field as PydanticField
+
+from ..config import Config
 from ..connectors import Vacancy
 from ..profile import MasterProfile, Project
+from .llm import LLM
 
 # ТЗ: письмо до ~150 слов. Длинные письма не читают.
 MAX_WORDS = 150
@@ -75,6 +80,89 @@ class TemplateLetterWriter:
 
         text = _fit(" ".join(parts), MAX_WORDS)
         return Letter(text=text, engine=self.engine, projects=[p.slug for p in projects])
+
+
+class ModelLetter(BaseModel):
+    """Схема ответа модели."""
+
+    text: str
+    used_projects: list[str] = PydanticField(default_factory=list)
+
+
+SYSTEM = f"""Ты пишешь сопроводительное письмо к отклику на вакансию.
+
+Жёсткие правила:
+- Только факты, которые тебе даны. Ни одного утверждения о соискателе,
+  которого нет в списке фактов: ни лет опыта, ни технологий, ни цифр.
+  Любая выдумка будет поймана проверкой и отправка сорвётся.
+- Не больше {MAX_WORDS} слов. Короче — лучше.
+- Никаких «коммуникабельный», «быстро обучаюсь», «амбициозный»: это не факты.
+- Одно-два конкретных совпадения с вакансией, остальное убрать.
+- Обращение на «вы», без заискивания и без фамильярности.
+- Упоминать технологии и компанию из текста вакансии можно.
+- В конце — контакт из фактов, как он дан."""
+
+
+class ModelLetterWriter:
+    """Письмо моделью. Проходит тот же Fact Checker, что и шаблонное."""
+
+    def __init__(self, config: Config, profile: MasterProfile) -> None:
+        self.config = config
+        self.profile = profile
+        self.llm = LLM(config)
+        self._template = TemplateLetterWriter(profile)
+
+    @property
+    def engine(self) -> str:
+        return self.llm.model
+
+    def write(self, vacancy: Vacancy) -> Letter:
+        projects = self._template.relevant_projects(vacancy)
+        person = self.profile.person
+        facts = [
+            "# Факты о соискателе",
+            f"Имя: {person.full_name}",
+            f"Город: {person.city}",
+            f"Контакт: {person.email or person.telegram or person.phone}",
+            f"Должность, на которую идёт: {self.profile.position.target_titles[0]}",
+            f"Уровень: {self.profile.position.level or 'не указан'}",
+            f"О себе: {self.profile.summary}",
+            "Навыки: " + ", ".join(self.profile.known_skills),
+            "",
+            "# Подходящие системы, о которых можно рассказать",
+        ]
+        for project in projects:
+            facts.append(
+                f"- {project.name}: {project.one_liner}. "
+                f"Где сделано: {project.context or 'не указано'}. "
+                f"Моя роль: {project.my_role}. "
+                f"Результат: {project.result or 'не измерен'}. "
+                f"Ссылка: {project.link or 'нет'}"
+            )
+        facts += [
+            "",
+            "# Вакансия",
+            f"Название: {vacancy.title}",
+            f"Компания: {vacancy.company or 'не указана'}",
+            f"Описание:\n{vacancy.description or '(описания нет)'}",
+        ]
+
+        answer = self.llm.parse(
+            ModelLetter, system=SYSTEM, prompt="\n".join(facts), effort="low"
+        )
+        return Letter(
+            text=answer.text.strip(),
+            engine=self.engine,
+            projects=answer.used_projects or [p.slug for p in projects],
+        )
+
+
+def build_letter_writer(config: Config, profile: MasterProfile, platform: str):
+    """Движок под площадку: модель только там, где это разрешено и возможно."""
+    settings = config.settings.platform(platform)
+    if settings.use_model and LLM(config).available:
+        return ModelLetterWriter(config, profile)
+    return TemplateLetterWriter(profile)
 
 
 def _fit(text: str, max_words: int) -> str:

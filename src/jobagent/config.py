@@ -61,6 +61,10 @@ class PlatformSettings(BaseModel):
     enabled: bool = False
     access: Access = Access.manual
     apply: ApplyMode = ApplyMode.draft
+    # Можно ли отправлять текст вакансии этой площадки в модель. У hh.ru
+    # п. 4.6 Условий запрещает передавать полученные данные сторонним
+    # сервисам, а модель — сторонний сервис (docs/hh-application.md)
+    use_model: bool = False
 
 
 class Paths(BaseModel):

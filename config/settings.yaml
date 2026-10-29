@@ -31,14 +31,21 @@ platforms:
     access: manual
     # api — POST /negotiations; draft — черновик письма + ссылка
     apply: draft
+    # false: п. 4.6 Условий API hh.ru запрещает передавать полученные данные
+    # сторонним сервисам, а модель — сторонний сервис. Вопрос отправлен
+    # в api@hh.ru, до ответа оценка и письма для hh.ru только локальные
+    use_model: false
   superjob:
     enabled: true
     access: api
     apply: api
+    # в правилах SuperJob такого запрета нет (docs/superjob-application.md)
+    use_model: true
   rabota:
     enabled: false
     access: manual
     apply: draft
+    use_model: false
 
 paths:
   db: output/jobagent.sqlite3

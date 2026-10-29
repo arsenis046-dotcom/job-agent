@@ -10,8 +10,9 @@ import json
 from dataclasses import dataclass, field
 
 from .agents.fact_checker import FactChecker
-from .agents.letter import TemplateLetterWriter
-from .agents.matcher import APPLY, ASK, SKIP, Assessment, LocalMatcher
+from .agents.letter import TemplateLetterWriter, build_letter_writer
+from .agents.llm import LLMError, LLMRefused, LLMUnavailable
+from .agents.matcher import APPLY, ASK, SKIP, Assessment, LocalMatcher, build_matcher
 from .config import Config, Mode, env
 from .connectors import ConnectorError, Vacancy, enabled_connectors
 from .db import (
@@ -59,6 +60,7 @@ class SearchOutcome:
 class ScoreOutcome:
     scored: int = 0
     by_verdict: dict[str, int] = field(default_factory=dict)
+    fallbacks: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         if not self.scored:
@@ -67,7 +69,13 @@ class ScoreOutcome:
         counts = ", ".join(
             f"{name} {self.by_verdict.get(name, 0)}" for name in order
         )
-        return f"оценено {self.scored}: {counts}"
+        text = f"оценено {self.scored}: {counts}"
+        if self.fallbacks:
+            text += (
+                f"\nоценено локально вместо модели: {len(self.fallbacks)}\n"
+                + "\n".join(f"  - {note}" for note in self.fallbacks[:5])
+            )
+        return text
 
 
 def daily_budget(config: Config) -> int:
@@ -147,11 +155,24 @@ def _store(conn, vacancy: Vacancy) -> int:
 def run_score(config: Config) -> ScoreOutcome:
     """Matcher: оценить всё, что ещё не оценивалось под активный профиль."""
     outcome = ScoreOutcome()
-    matcher = LocalMatcher(config, load_master_profile(config.root))
+    master = load_master_profile(config.root)
+    matchers: dict[str, object] = {}
+    local = LocalMatcher(config, master)
+
+    def assess(vacancy: Vacancy) -> Assessment:
+        """Модель там, где разрешено; при любой её осечке — локальная оценка."""
+        if vacancy.platform not in matchers:
+            matchers[vacancy.platform] = build_matcher(config, master, vacancy.platform)
+        try:
+            return matchers[vacancy.platform].assess(vacancy)
+        except (LLMUnavailable, LLMRefused, LLMError) as exc:
+            outcome.fallbacks.append(f"{vacancy.title}: {exc}")
+            return local.assess(vacancy)
+
     conn = open_db(config.db_path)
     try:
         for row in unscored(conn, config.profile.name):
-            assessment = matcher.assess(vacancy_from_row(row))
+            assessment = assess(vacancy_from_row(row))
             _save(conn, row["id"], config.profile.name, assessment)
             outcome.scored += 1
             outcome.by_verdict[assessment.verdict] = (
@@ -284,7 +305,7 @@ def run_apply(config: Config, limit: int | None = None) -> ApplyOutcome:
         outcome.notes.append(str(resume_verdict))
         return outcome
 
-    writer = TemplateLetterWriter(profile)
+    writers: dict[str, object] = {}
     budget = daily_budget(config)
     if limit is not None:
         budget = min(budget, limit)
@@ -305,7 +326,17 @@ def run_apply(config: Config, limit: int | None = None) -> ApplyOutcome:
                 continue
 
             vacancy = vacancy_from_row(row)
-            letter = writer.write(vacancy)
+            if vacancy.platform not in writers:
+                writers[vacancy.platform] = build_letter_writer(
+                    config, profile, vacancy.platform
+                )
+            try:
+                letter = writers[vacancy.platform].write(vacancy)
+            except (LLMUnavailable, LLMRefused, LLMError) as exc:
+                # письмо от модели не получилось — пишем шаблонное, но
+                # обязательно отмечаем это: письмо будет суше
+                outcome.notes.append(f"{row['title']}: письмо шаблонное ({exc})")
+                letter = TemplateLetterWriter(profile).write(vacancy)
             letter_verdict = checker.check_letter(
                 letter.text, " ".join(p for p in (row["title"], row["description"]) if p)
             )
