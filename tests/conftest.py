@@ -11,10 +11,22 @@ from jobagent.profile import MasterProfile
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    """Копия конфигурации репозитория в tmp — тесты не трогают рабочие файлы."""
+    """Копия конфигурации репозитория в tmp — тесты не трогают рабочие файлы.
+
+    Настоящие файлы проектов нарочно не копируются: тесты механики не должны
+    зависеть от того, сколько проектов у пользователя сегодня. Реальный профиль
+    проверяется отдельно, в test_real_profile.py.
+    """
     root = project_root()
-    for folder in ("config", "profile"):
-        shutil.copytree(root / folder, tmp_path / folder)
+    shutil.copytree(root / "config", tmp_path / "config")
+    (tmp_path / "profile" / "projects").mkdir(parents=True)
+    shutil.copy(
+        root / "profile" / "master_profile.yaml", tmp_path / "profile" / "master_profile.yaml"
+    )
+    shutil.copy(
+        root / "profile" / "projects" / "_template.yaml",
+        tmp_path / "profile" / "projects" / "_template.yaml",
+    )
     return tmp_path
 
 
