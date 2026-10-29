@@ -24,7 +24,8 @@
 
 ```bash
 uv sync
-cp .env.example .env     # заполнить ключи
+cp .env.example .env                                           # заполнить ключи
+cp profile/master_profile.example.yaml profile/master_profile.yaml
 uv run jobagent init
 uv run jobagent doctor          # что настроено, что нет
 uv run jobagent profile check   # что в мастер-профиле есть, чего не хватает

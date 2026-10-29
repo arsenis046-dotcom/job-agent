@@ -6,3 +6,9 @@ __pycache__/
 .pytest_cache/
 *.sqlite3
 *.sqlite3-journal
+
+# Мои факты и мои проекты — личные данные, в репозиторий не идут.
+# Отслеживается только пустая схема: profile/master_profile.example.yaml
+profile/master_profile.yaml
+profile/projects/*.yaml
+!profile/projects/_template.yaml

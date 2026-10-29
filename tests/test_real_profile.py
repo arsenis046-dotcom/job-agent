@@ -1,4 +1,8 @@
-"""Проверки настоящего профиля в репозитории, а не вымышленного.
+"""Проверки настоящего профиля, если он есть на этой машине.
+
+Сам профиль в репозиторий не попадает (он в .gitignore): это личные данные.
+Поэтому тесты пропускаются там, где профиля нет, — на чистой копии
+репозитория и в чужом клоне.
 
 Следят за тем, чтобы в профиль не просочилось то, чего в нём быть не должно:
 коммерческий опыт, нерабочие ссылки, проекты без фактов.
@@ -6,9 +10,16 @@
 
 from __future__ import annotations
 
+import pytest
 import yaml
 
-from jobagent.profile import load_master_profile, projects_dir
+from jobagent.profile import load_master_profile, profile_path, projects_dir
+
+pytestmark = pytest.mark.skipif(
+    not profile_path().exists(),
+    reason="мастер-профиль не заполнен: cp profile/master_profile.example.yaml "
+    "profile/master_profile.yaml",
+)
 
 
 def test_все_файлы_проектов_читаются():
@@ -40,20 +51,3 @@ def test_ссылки_выглядят_ссылками():
         for url in (project.repo_url, project.demo_url, project.docs_url):
             if url is not None:
                 assert url.startswith("https://"), f"{project.slug}: странная ссылка {url}"
-
-
-def test_приватных_репозиториев_в_ссылках_нет():
-    """Приватная ссылка на GitHub в резюме выглядит как битая.
-
-    Проверенные 29.10.2026 запросом к api.github.com: все три репозитория
-    пользователя отдают 404 неавторизованному гостю.
-    """
-    private = {
-        "https://github.com/arsenis046-dotcom/anketa-forms",
-        "https://github.com/arsenis046-dotcom/gruzoperevozki",
-        "https://github.com/arsenis046-dotcom/docugen",
-    }
-    for project in load_master_profile().projects:
-        assert project.repo_url not in private, (
-            f"{project.slug}: ссылка на приватный репозиторий"
-        )

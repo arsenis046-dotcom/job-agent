@@ -20,8 +20,11 @@ def repo(tmp_path: Path) -> Path:
     root = project_root()
     shutil.copytree(root / "config", tmp_path / "config")
     (tmp_path / "profile" / "projects").mkdir(parents=True)
+    # из примера, а не из моего профиля: в чистой копии репозитория
+    # master_profile.yaml ещё не создан, он в .gitignore
     shutil.copy(
-        root / "profile" / "master_profile.yaml", tmp_path / "profile" / "master_profile.yaml"
+        root / "profile" / "master_profile.example.yaml",
+        tmp_path / "profile" / "master_profile.yaml",
     )
     shutil.copy(
         root / "profile" / "projects" / "_template.yaml",

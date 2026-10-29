@@ -209,7 +209,11 @@ def load_master_profile(root: Path | None = None) -> MasterProfile:
     """Читает мастер-профиль и подмешивает проекты из profile/projects/*.yaml."""
     path = profile_path(root)
     if not path.exists():
-        raise ConfigError(f"нет мастер-профиля: {path}")
+        raise ConfigError(
+            f"нет мастер-профиля: {path}\n"
+            "Создать из примера: cp profile/master_profile.example.yaml "
+            "profile/master_profile.yaml"
+        )
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: ожидался словарь на верхнем уровне")
