@@ -24,16 +24,20 @@
 uv sync
 cp .env.example .env     # заполнить ключи
 uv run jobagent init
-uv run jobagent doctor   # что настроено, что нет
+uv run jobagent doctor          # что настроено, что нет
+uv run jobagent profile check   # что в мастер-профиле есть, чего не хватает
+uv run jobagent resume          # собрать резюме: DOCX, PDF и проверка ATS
 uv run pytest
 ```
+
+Поля мастер-профиля описаны в `docs/profile.md`.
 
 ## Состояние по фазам
 
 | Фаза | Что | Статус |
 |---|---|---|
 | 0 | Каркас, конфиги, БД, CLI, тесты | готово |
-| 1 | Profile Builder, Resume Writer, DOCX/PDF | — |
+| 1 | Profile Builder, Resume Writer, DOCX/PDF | готово, ждёт моих фактов |
 | 2 | Коннекторы, Scout, Matcher | коннекторы есть, Scout/Matcher — нет |
 | 3 | Letter Writer, Fact Checker, Applier | защита `dry_run` готова и покрыта тестами |
 | 4 | Market Analyst, Portfolio Advisor, Interview Coach | — |

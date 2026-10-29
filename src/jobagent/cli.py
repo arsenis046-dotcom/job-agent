@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -17,6 +19,15 @@ from .config import (
 )
 from .connectors import REGISTRY
 from .db import SCHEMA_VERSION, open_db, sent_today
+from .documents import (
+    RenderError,
+    ResumeError,
+    build_resume,
+    check_pdf,
+    render_docx,
+    render_pdf,
+)
+from .profile import find_gaps, load_master_profile
 
 console = Console()
 
@@ -146,16 +157,106 @@ def profile_new(name: str) -> None:
     _phase(5, f"диалоговое создание профиля {name!r}")
 
 
+@profile_app.command("check")
+def profile_check() -> None:
+    """Что в мастер-профиле заполнено, а чего не хватает для резюме."""
+    config = _config()
+    try:
+        master = load_master_profile(config.root)
+    except ConfigError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(2) from exc
+
+    gaps = find_gaps(master)
+    blocking = [gap for gap in gaps if gap.blocking]
+
+    console.print(f"Проектов в профиле: {len(master.projects)}, "
+                  f"годных для резюме: {len(master.resume_projects)}")
+    console.print(f"Навыков: {master.skills.total}")
+
+    if not gaps:
+        console.print("[green]Профиль заполнен полностью.[/green]")
+        return
+    for gap in gaps:
+        color = "red" if gap.blocking else "yellow"
+        console.print(f"[{color}]{gap}[/{color}]")
+    if blocking:
+        console.print(
+            f"\n[red]Резюме пока собрать нельзя: {len(blocking)} обязательных "
+            f"фактов не хватает.[/red]"
+        )
+        raise typer.Exit(1)
+    console.print("\n[green]Резюме собрать можно, остальное — на твоё усмотрение.[/green]")
+
+
 @profile_app.command("build")
 def profile_build() -> None:
-    """Интервью для заполнения мастер-профиля."""
-    _phase(1, "Profile Builder")
+    """Задать вопросы по незаполненным фактам и записать ответы в профиль.
+
+    Диалоговый вариант этого же — субагент `.claude/agents/profile-builder.md`;
+    он удобнее для проектов, где нужен разговор, а не одно поле.
+    """
+    config = _config()
+    master = load_master_profile(config.root)
+    gaps = find_gaps(master)
+    if not gaps:
+        console.print("[green]Нечего спрашивать: профиль заполнен.[/green]")
+        return
+
+    console.print(
+        "Пустой ответ — пропустить вопрос. Выдумывать за тебя я не буду.\n"
+    )
+    answers: dict[str, str] = {}
+    for gap in gaps:
+        mark = "обязательно" if gap.blocking else "можно пропустить"
+        answer = typer.prompt(f"{gap.question} ({mark})", default="", show_default=False)
+        if answer.strip():
+            answers[gap.path] = answer.strip()
+
+    if not answers:
+        console.print("Ответов нет, профиль не изменился.")
+        return
+    console.print(
+        f"\nПолучено ответов: {len(answers)}. "
+        "Поля со списками и проекты я не трогаю автоматически — "
+        "их правильнее заполнить через субагента или руками:"
+    )
+    for path, answer in answers.items():
+        console.print(f"  [cyan]{path}[/cyan] = {answer}")
 
 
 @app.command()
-def resume(vacancy_id: int | None = None) -> None:
-    """Собрать резюме: базовое или под вакансию."""
-    _phase(1, "Resume Writer и рендер DOCX/PDF")
+def resume(
+    out: Path = typer.Option(None, help="Куда положить файлы (по умолчанию output/)"),
+    skip_pdf: bool = typer.Option(False, "--skip-pdf", help="Только DOCX"),
+) -> None:
+    """Собрать базовое резюме из мастер-профиля: DOCX, PDF и проверка ATS."""
+    config = _config()
+    try:
+        master = load_master_profile(config.root)
+        document = build_resume(master)
+    except (ConfigError, ResumeError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    folder = out or config.output_dir
+    stem = (master.person.full_name or "resume").replace(" ", "_")
+    docx_path = render_docx(document, folder / f"{stem}.docx")
+    console.print(f"DOCX: [green]{docx_path}[/green]")
+
+    if skip_pdf:
+        return
+    try:
+        pdf_path = render_pdf(document, folder / f"{stem}.pdf")
+    except RenderError as exc:
+        console.print(f"[yellow]PDF не собран:[/yellow] {exc}")
+        raise typer.Exit(1) from exc
+    console.print(f"PDF:  [green]{pdf_path}[/green]")
+
+    report = check_pdf(pdf_path, document)
+    console.print(str(report) if report.ok else f"[red]{report}[/red]")
+    if not report.ok:
+        raise typer.Exit(1)
 
 
 @app.command()
